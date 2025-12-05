@@ -49,7 +49,7 @@ func (s *SchedulerService) Start() error {
 		return err
 	}
 
-	if _, err := s.AddJob("sync_epg_morning", "0 7 * * *", s.syncEPGMorning); err != nil {
+	if _, err := s.AddJob("sync_epg_morning", "0 8 * * *", s.syncEPGMorning); err != nil {
 		return err
 	}
 
