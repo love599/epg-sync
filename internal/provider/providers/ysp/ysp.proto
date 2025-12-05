@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package ysp;
+option go_package = "./ysp";
+
+message cn {
+  message yangshipin {
+    message omstv{
+      message common {
+        message proto {
+          message epgProgramModel {
+            message Response {
+                uint32 code = 1;
+                repeated programModel.Program dataList = 2;
+                string message = 3;
+                uint64 updateTime = 4;
+            }
+            message programModel {
+              message Program {
+                string programId = 1;
+                string name = 2;
+                uint64 st = 3;
+                uint64 et = 4;
+                string startTime = 5;
+                string endTime = 6;
+                uint32 duration = 7;
+                bool isVip = 8;
+                string copyrightFlag = 9;
+                string timeShiftReviewFlag = 10;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+  

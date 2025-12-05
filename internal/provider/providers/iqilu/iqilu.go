@@ -1,0 +1,195 @@
+package iqilu
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/epg-sync/epgsync/internal/model"
+	"github.com/epg-sync/epgsync/internal/provider"
+	"github.com/epg-sync/epgsync/pkg/errors"
+	"github.com/epg-sync/epgsync/pkg/logger"
+)
+
+type ProgramResponse struct {
+	Code   int    `json:"code"`
+	ErrMsg string `json:"msg"`
+	Data   struct {
+		Infos []Program `json:"infos"`
+	} `json:"data"`
+}
+
+type Program struct {
+	StartTime string `json:"start_time"`
+	BeginTime int64  `json:"begintime"`
+	EndTime   string `json:"end_time"`
+	Name      string `json:"-"`
+	NameRaw   any    `json:"name"` // some title contain non-string types
+}
+
+type IQiluProvider struct {
+	*provider.BaseProvider
+}
+
+var (
+	channelList = []*model.ProviderChannel{
+		{
+			ID:   "24",
+			Name: "山东卫视",
+		},
+		{
+			ID:   "25",
+			Name: "山东齐鲁",
+		},
+		{
+			ID:   "26",
+			Name: "山东体育",
+		},
+		{
+			ID:   "29",
+			Name: "山东生活",
+		},
+		{
+			ID:   "28",
+			Name: "山东综艺",
+		},
+		{
+			ID:   "31",
+			Name: "山东新闻",
+		},
+		{
+			ID:   "30",
+			Name: "山东农科",
+		},
+		{
+			ID:   "32",
+			Name: "山东少儿",
+		},
+	}
+)
+
+func init() {
+	provider.Register("iqilu", New)
+}
+
+func New(config *model.ProviderConfig) (provider.Provider, error) {
+	return &IQiluProvider{
+		BaseProvider: provider.NewBaseProvider(config, channelList),
+	}, nil
+}
+
+func (p *IQiluProvider) HealthCheck(ctx context.Context) *model.ProviderHealth {
+	_, err := p.FetchEPG(ctx, "24", "山东卫视", time.Now())
+
+	if err != nil {
+		return &model.ProviderHealth{
+			Healthy: false,
+			Message: fmt.Sprintf("FetchEPG failed: %v", err),
+		}
+	}
+
+	return &model.ProviderHealth{
+		Healthy: true,
+		Message: "OK",
+	}
+}
+
+func (p *IQiluProvider) FetchEPG(ctx context.Context, providerChannelID, channelID string, date time.Time) ([]*model.Program, error) {
+	headers := map[string]string{
+		provider.HeaderUserAgent: provider.DefaultUserAgent,
+	}
+	formatDate := date.Format("2006-01-02")
+	res, err := p.GetWithHeaders(ctx, "/v1/app/play/program/qilu", map[string]string{
+		"channelID": providerChannelID,
+		"date":      formatDate,
+	}, headers)
+
+	if err != nil {
+		return nil, err
+	}
+
+	programData, err := p.ParseEPGResponse(res, providerChannelID, channelID, formatDate)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return programData, nil
+}
+
+func (p *IQiluProvider) FetchEPGBatch(ctx context.Context, channelMappingInfo []*model.ChannelMappingInfo, date time.Time) ([]*model.Program, error) {
+	return p.BaseProvider.FetchEPGBatch(ctx, p, channelMappingInfo, date)
+}
+
+func (p *IQiluProvider) ParseEPGResponse(data []byte, providerChannelID, channelID, date string) ([]*model.Program, error) {
+	var resp ProgramResponse
+	err := json.Unmarshal(data, &resp)
+	if err != nil {
+		return nil, errors.ProviderParseFailed(p.GetID(), err)
+	}
+	if resp.Code != 1 {
+		return nil, errors.ProviderAPIError(p.GetID(), fmt.Sprintf("%d", resp.Code), resp.ErrMsg)
+	}
+	var programs []*model.Program
+
+	if len(resp.Data.Infos) == 0 {
+		return programs, nil
+	}
+
+	location, err := time.LoadLocation(provider.UTC8Location)
+	if err != nil {
+		logger.Warn(errors.ErrProgramLoadLocation(channelID, err).Error())
+		return nil, err
+	}
+
+	for _, programData := range resp.Data.Infos {
+		startTime := date + " " + strings.ReplaceAll(programData.StartTime, "：", ":")
+		endTime := date + " " + strings.ReplaceAll(programData.EndTime, "：", ":")
+
+		startTimeParsed, endTimeParsed, err := p.BaseProvider.ProcessProgramTimeRange(startTime, endTime, date, provider.TimeLayoutYYYYMMDDHHMMSS, location)
+
+		if err != nil {
+			logger.Warn(errors.ErrProgramDateRangeProcess(err, channelID, date).Error())
+			continue
+		}
+
+		if endTimeParsed.Before(startTimeParsed) || endTimeParsed.Equal(startTimeParsed) {
+			continue
+		}
+
+		programs = append(programs, &model.Program{
+			ChannelID:        channelID,
+			Title:            strings.TrimSpace(programData.Name),
+			StartTime:        startTimeParsed,
+			EndTime:          endTimeParsed,
+			OriginalTimezone: provider.UTC8Location,
+			ProviderID:       p.GetID(),
+		})
+	}
+
+	return programs, nil
+}
+
+func (p *Program) UnmarshalJSON(data []byte) error {
+	type Alias Program
+	aux := &struct {
+		NameRaw any `json:"name"`
+		*Alias
+	}{
+		Alias: (*Alias)(p),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	switch v := aux.NameRaw.(type) {
+	case string:
+		p.Name = v
+	case float64:
+		p.Name = fmt.Sprintf("%.0f", v)
+	}
+
+	return nil
+}

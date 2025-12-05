@@ -1,0 +1,14 @@
+services:
+  epg-sync:
+    image: epg-sync:latest
+    build: .
+    container_name: epg-sync
+    restart: always
+    network_mode: bridge
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config:/config
+      - ./logs:/logs
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
