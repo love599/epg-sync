@@ -3,19 +3,19 @@ server:
   port: 5678
   mode: release
   timeout: 90
-  jwt_secret: ""
+  jwt_secret: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
   jwt_expire_hours: 24
 
 cache:
-  type: memory
-  addr: redis.orb.local:6379
-  password: "1"
-  db: 1
+  输入: memory
+  addr: 127.0.0.1:6379
+  password: ""
+  db: 0
   ttl: 24h
 
 database:
   driver: sqlite
-  host: mysql.orb.local
+  host: 127.0.0.1
   port: 3306
   user: root
   password: 123456
