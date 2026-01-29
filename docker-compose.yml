@@ -7,7 +7,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./config:/config
-      - ./logs:/logs
+      - /volume1/docker/epg/config:/config
+      - /volume1/docker/epg/logs:/logs
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
